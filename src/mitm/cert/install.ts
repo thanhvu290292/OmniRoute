@@ -19,7 +19,14 @@ export async function checkCertInstalled(certPath) {
   if (IS_WIN) {
     return checkCertInstalledWindows(certPath);
   }
-  return checkCertInstalledMac(certPath);
+  if (process.platform === "darwin") {
+    return checkCertInstalledMac(certPath);
+  }
+  return checkCertInstalledLinux();
+}
+
+function checkCertInstalledLinux() {
+  return fs.existsSync("/usr/local/share/ca-certificates/omniroute-ca.crt");
 }
 
 function checkCertInstalledMac(certPath) {
@@ -63,8 +70,22 @@ export async function installCert(sudoPassword, certPath) {
 
   if (IS_WIN) {
     await installCertWindows(certPath);
-  } else {
+  } else if (process.platform === "darwin") {
     await installCertMac(sudoPassword, certPath);
+  } else if (process.platform === "linux") {
+    await installCertLinux(sudoPassword, certPath);
+  }
+}
+
+async function installCertLinux(sudoPassword, certPath) {
+  // Ubuntu/Debian: Copy to /usr/local/share/ca-certificates/ and run update-ca-certificates
+  const destPath = "/usr/local/share/ca-certificates/omniroute-ca.crt";
+  const command = `sudo -S cp "${certPath}" ${destPath} && sudo -S update-ca-certificates`;
+  try {
+    await execWithPassword(command, sudoPassword);
+    console.log(`✅ Installed certificate to /usr/local/share/ca-certificates: ${certPath}`);
+  } catch (error) {
+    throw new Error(`Certificate install failed: ${error.message}`);
   }
 }
 
@@ -108,8 +129,20 @@ export async function uninstallCert(sudoPassword, certPath) {
 
   if (IS_WIN) {
     await uninstallCertWindows();
-  } else {
+  } else if (process.platform === "darwin") {
     await uninstallCertMac(sudoPassword, certPath);
+  } else if (process.platform === "linux") {
+    await uninstallCertLinux(sudoPassword);
+  }
+}
+
+async function uninstallCertLinux(sudoPassword) {
+  const command = `sudo -S rm -f /usr/local/share/ca-certificates/omniroute-ca.crt && sudo -S update-ca-certificates`;
+  try {
+    await execWithPassword(command, sudoPassword);
+    console.log("✅ Uninstalled certificate from /usr/local/share/ca-certificates");
+  } catch (err) {
+    throw new Error("Failed to uninstall certificate from Linux store");
   }
 }
 

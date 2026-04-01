@@ -17,6 +17,8 @@ export async function GET() {
       dnsConfigured: status.dnsConfigured || false,
       certExists: status.certExists || false,
       hasCachedPassword: !!getCachedPassword(),
+      isWindows: process.platform === "win32",
+      isRoot: process.platform !== "win32" && process.getuid() === 0,
     });
   } catch (error) {
     console.log("Error getting MITM status:", error.message);
@@ -49,11 +51,12 @@ export async function POST(request) {
     const { apiKey, sudoPassword } = validation.data;
     const { startMitm, getCachedPassword, setCachedPassword } = await import("@/mitm/manager");
     const isWin = process.platform === "win32";
+    const isRoot = !isWin && process.getuid() === 0;
     const pwd = sudoPassword || getCachedPassword() || "";
 
-    if (!apiKey || (!isWin && !pwd)) {
+    if (!apiKey || (!isWin && !isRoot && !pwd)) {
       return NextResponse.json(
-        { error: isWin ? "Missing apiKey" : "Missing apiKey or sudoPassword" },
+        { error: isWin || isRoot ? "Missing apiKey" : "Missing apiKey or sudoPassword" },
         { status: 400 }
       );
     }
@@ -100,9 +103,10 @@ export async function DELETE(request) {
     const { sudoPassword } = validation.data;
     const { stopMitm, getCachedPassword, setCachedPassword } = await import("@/mitm/manager");
     const isWin = process.platform === "win32";
+    const isRoot = !isWin && process.getuid() === 0;
     const pwd = sudoPassword || getCachedPassword() || "";
 
-    if (!isWin && !pwd) {
+    if (!isWin && !isRoot && !pwd) {
       return NextResponse.json({ error: "Missing sudoPassword" }, { status: 400 });
     }
 

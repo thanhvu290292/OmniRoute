@@ -20,6 +20,11 @@ const API_KEY = process.env.ROUTER_API_KEY;
 const DATA_DIR = getDataDir();
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const SQLITE_FILE = path.join(DATA_DIR, "storage.sqlite");
+const MITM_DIR = path.join(DATA_DIR, "mitm");
+const PID_FILE = path.join(MITM_DIR, ".mitm.pid");
+
+if (!fs.existsSync(MITM_DIR)) fs.mkdirSync(MITM_DIR, { recursive: true });
+fs.writeFileSync(PID_FILE, String(process.pid));
 
 let _sqliteDb = null;
 
@@ -283,9 +288,21 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
-process.on("SIGTERM", () => {
-  server.close(() => process.exit(0));
+process.on("uncaughtException", (err) => {
+  console.error(`❌ Uncaught Exception: ${err.message}`);
+  process.exit(1);
 });
+
+process.on("SIGTERM", () => {
+  server.close(() => {
+    if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
+    process.exit(0);
+  });
+});
+
 process.on("SIGINT", () => {
-  server.close(() => process.exit(0));
+  server.close(() => {
+    if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
+    process.exit(0);
+  });
 });

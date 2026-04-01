@@ -23,12 +23,10 @@ export function clearCachedPassword() {
   _cachedPassword = null;
 }
 
-const PID_FILE = path.join(resolveDataDir(), "mitm", ".mitm.pid");
-const MITM_SERVER_URL = new URL("./server.cjs", import.meta.url);
-const MITM_SERVER_PATH =
-  process.platform === "win32" && MITM_SERVER_URL.pathname.startsWith("/")
-    ? decodeURIComponent(MITM_SERVER_URL.pathname.slice(1))
-    : decodeURIComponent(MITM_SERVER_URL.pathname);
+function getMitmPidFile() {
+  return path.join(resolveDataDir(), "mitm", ".mitm.pid");
+}
+const MITM_SERVER_PATH = path.join(process.cwd(), "src", "mitm", "server.cjs");
 
 // Check if a PID is alive
 function isProcessAlive(pid) {
@@ -39,7 +37,21 @@ function isProcessAlive(pid) {
     return false;
   }
 }
-
+// Kill any process using port 443
+async function killPort443(sudoPassword) {
+  const isRoot = process.getuid && process.getuid() === 0;
+  const cmd = isRoot 
+    ? "fuser -k 443/tcp || true" 
+    : `echo "${sudoPassword}" | sudo -S fuser -k 443/tcp || true`;
+  
+  return new Promise((resolve) => {
+    const { exec } = require("child_process");
+    exec(cmd, (error) => {
+      // We ignore errors because fuser returns non-zero if no process found
+      resolve(true);
+    });
+  });
+}
 /**
  * Get MITM status
  */
@@ -50,17 +62,18 @@ export async function getMitmStatus() {
 
   if (!running) {
     try {
-      if (fs.existsSync(PID_FILE)) {
-        const savedPid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
+      const pidFile = getMitmPidFile();
+      if (fs.existsSync(pidFile)) {
+        const savedPid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
         if (savedPid && isProcessAlive(savedPid)) {
           running = true;
           pid = savedPid;
         } else {
           // Stale PID file, clean up
-          fs.unlinkSync(PID_FILE);
+          try { fs.unlinkSync(pidFile); } catch (e) {}
         }
       }
-    } catch {
+    } catch (error) {
       // Ignore
     }
   }
@@ -87,9 +100,16 @@ export async function getMitmStatus() {
  * @param {string} sudoPassword - Sudo password for DNS/cert operations
  */
 export async function startMitm(apiKey, sudoPassword) {
-  // Check if already running
+  // 0. Forcefully clear port 443
+  console.log("Clearing port 443...");
+  await killPort443(sudoPassword);
+  // Small delay to allow port to be released
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  // Check if already running (in-memory)
   if (serverProcess && !serverProcess.killed) {
-    throw new Error("MITM proxy is already running");
+    serverProcess.kill("SIGKILL");
+    serverProcess = null;
   }
 
   // 1. Generate SSL certificate if not exists
@@ -111,6 +131,7 @@ export async function startMitm(apiKey, sudoPassword) {
   serverProcess = spawn(process.execPath, [MITM_SERVER_PATH], {
     env: {
       ...process.env,
+      DATA_DIR: resolveDataDir(),
       ROUTER_API_KEY: apiKey,
       NODE_ENV: "production",
     },
@@ -120,8 +141,9 @@ export async function startMitm(apiKey, sudoPassword) {
 
   serverPid = serverProcess.pid;
 
-  // Save PID to file
-  fs.writeFileSync(PID_FILE, String(serverPid));
+  // PID is managed by the server process itself to ensure accuracy across refreshes
+  // server.cjs now writes to getMitmPidFile() on startup
+
 
   // Log server output
   serverProcess.stdout.on("data", (data) => {
@@ -136,16 +158,10 @@ export async function startMitm(apiKey, sudoPassword) {
     console.log(`MITM server exited with code ${code}`);
     serverProcess = null;
     serverPid = null;
-
-    // Remove PID file
-    try {
-      fs.unlinkSync(PID_FILE);
-    } catch (error) {
-      // Ignore
-    }
   });
 
   // Wait and verify server actually started
+  let lastError = "";
   const started = await new Promise((resolve) => {
     let resolved = false;
     const timeout = setTimeout(() => {
@@ -166,6 +182,7 @@ export async function startMitm(apiKey, sudoPassword) {
     // Check stderr for error messages
     serverProcess.stderr.on("data", (data) => {
       const msg = data.toString().trim();
+      lastError = msg;
       if (msg.includes("Port") && msg.includes("already in use")) {
         clearTimeout(timeout);
         if (!resolved) {
@@ -177,7 +194,8 @@ export async function startMitm(apiKey, sudoPassword) {
   });
 
   if (!started) {
-    throw new Error("MITM server failed to start (port 443 may be in use)");
+    const detail = lastError ? `: ${lastError}` : " (port 443 may be in use)";
+    throw new Error(`MITM server failed to start${detail}`);
   }
 
   return {
@@ -205,8 +223,9 @@ export async function stopMitm(sudoPassword) {
   } else {
     // Fallback: kill by PID file
     try {
-      if (fs.existsSync(PID_FILE)) {
-        const savedPid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
+      const pidFile = getMitmPidFile();
+      if (fs.existsSync(pidFile)) {
+        const savedPid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
         if (savedPid && isProcessAlive(savedPid)) {
           console.log(`Killing MITM server (PID: ${savedPid})...`);
           process.kill(savedPid, "SIGTERM");
@@ -230,7 +249,8 @@ export async function stopMitm(sudoPassword) {
   // 3. Clean up
   clearCachedPassword(); // Clear password from memory when proxy stops
   try {
-    fs.unlinkSync(PID_FILE);
+    const pidFile = getMitmPidFile();
+    if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile);
   } catch (error) {
     // Ignore
   }

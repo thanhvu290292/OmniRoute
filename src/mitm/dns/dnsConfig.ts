@@ -99,7 +99,10 @@ export async function removeDNSEntry(sudoPassword) {
         });
       });
     } else {
-      const command = `sudo -S sed -i '' '/${TARGET_HOST}/d' ${HOSTS_FILE}`;
+      const isMac = process.platform === "darwin";
+      const command = isMac
+        ? `sudo -S sed -i '' '/${TARGET_HOST}/d' ${HOSTS_FILE}`
+        : `sudo -S sed -i '/${TARGET_HOST}/d' ${HOSTS_FILE}`;
       await execWithPassword(command, sudoPassword);
     }
     console.log(`✅ Removed DNS entry for ${TARGET_HOST}`);
