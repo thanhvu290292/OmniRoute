@@ -70,8 +70,9 @@ export default function AntigravityToolCard({
     }
   };
 
-  // Windows uses UAC dialog, no sudo needed
-  const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
+  // Server-side check: Windows or Root don't need sudo password prompt
+  const isWindows = !!status?.isWindows;
+  const isRoot = !!status?.isRoot;
 
   const handleStart = () => {
     if (isWindows || status?.hasCachedPassword) {
