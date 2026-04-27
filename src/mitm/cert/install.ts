@@ -9,6 +9,8 @@ import {
 } from "../systemCommands.ts";
 
 const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
+const IS_LINUX = process.platform === "linux";
 
 // Get SHA1 fingerprint from cert file using Node.js crypto
 function getCertFingerprint(certPath: string): string {
@@ -27,8 +29,12 @@ function getCertFingerprint(certPath: string): string {
 export async function checkCertInstalled(certPath: string): Promise<boolean> {
   if (IS_WIN) {
     return checkCertInstalledWindows(certPath);
+  } else if (IS_MAC) {
+    return checkCertInstalledMac(certPath);
+  } else if (IS_LINUX) {
+    return checkCertInstalledLinux();
   }
-  return checkCertInstalledMac(certPath);
+  return false;
 }
 
 async function checkCertInstalledMac(certPath: string): Promise<boolean> {
@@ -55,6 +61,10 @@ async function checkCertInstalledWindows(_certPath: string): Promise<boolean> {
   }
 }
 
+async function checkCertInstalledLinux(): Promise<boolean> {
+  return fs.existsSync("/usr/local/share/ca-certificates/omniroute-mitm.crt");
+}
+
 /**
  * Install SSL certificate to system trust store
  */
@@ -71,8 +81,12 @@ export async function installCert(sudoPassword: string, certPath: string): Promi
 
   if (IS_WIN) {
     await installCertWindows(certPath);
-  } else {
+  } else if (IS_MAC) {
     await installCertMac(sudoPassword, certPath);
+  } else if (IS_LINUX) {
+    await installCertLinux(sudoPassword, certPath);
+  } else {
+    throw new Error(`Unsupported platform: ${process.platform}`);
   }
 }
 
@@ -112,6 +126,18 @@ async function installCertWindows(certPath: string): Promise<void> {
   console.log(`✅ Installed certificate to Windows Root store`);
 }
 
+async function installCertLinux(sudoPassword: string, certPath: string): Promise<void> {
+  try {
+    const targetPath = "/usr/local/share/ca-certificates/omniroute-mitm.crt";
+    await execFileWithPassword("sudo", ["-S", "cp", certPath, targetPath], sudoPassword);
+    await execFileWithPassword("sudo", ["-S", "chmod", "644", targetPath], sudoPassword);
+    await execFileWithPassword("sudo", ["-S", "update-ca-certificates"], sudoPassword);
+    console.log(`✅ Installed certificate to Ubuntu system trust store`);
+  } catch (error) {
+    throw new Error(`Failed to install certificate on Linux: ${getErrorMessage(error)}`);
+  }
+}
+
 /**
  * Uninstall SSL certificate from system store
  */
@@ -124,8 +150,10 @@ export async function uninstallCert(sudoPassword: string, certPath: string): Pro
 
   if (IS_WIN) {
     await uninstallCertWindows();
-  } else {
+  } else if (IS_MAC) {
     await uninstallCertMac(sudoPassword, certPath);
+  } else if (IS_LINUX) {
+    await uninstallCertLinux(sudoPassword);
   }
 }
 
@@ -156,4 +184,15 @@ async function uninstallCertWindows(): Promise<void> {
     if ($proc.ExitCode -ne 0) { throw "certutil exited with code $($proc.ExitCode)" }
   `);
   console.log("✅ Uninstalled certificate from Windows Root store");
+}
+
+async function uninstallCertLinux(sudoPassword: string): Promise<void> {
+  try {
+    const targetPath = "/usr/local/share/ca-certificates/omniroute-mitm.crt";
+    await execFileWithPassword("sudo", ["-S", "rm", "-f", targetPath], sudoPassword);
+    await execFileWithPassword("sudo", ["-S", "update-ca-certificates", "--fresh"], sudoPassword);
+    console.log("✅ Uninstalled certificate from Ubuntu system trust store");
+  } catch (error) {
+    throw new Error(`Failed to uninstall certificate on Linux: ${getErrorMessage(error)}`);
+  }
 }
