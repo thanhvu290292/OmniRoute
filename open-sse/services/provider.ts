@@ -87,6 +87,11 @@ function buildAnthropicCompatibleUrl(baseUrl) {
 export function detectFormatFromEndpoint(body, endpointPath = "") {
   const path = String(endpointPath || "");
 
+  // Priority detection for Antigravity (MITM proxy case)
+  if (body?.request?.contents && body?.userAgent === "antigravity") {
+    return "antigravity";
+  }
+
   if (/\/responses(?=\/|$)/i.test(path) || /^responses(?=\/|$)/i.test(path)) {
     return "openai-responses";
   }
