@@ -59,7 +59,7 @@ const nextConfig = {
     root: projectRoot,
     resolveAlias: {
       // Point mitm/manager to a stub during build (native child_process/fs can't be bundled)
-      "@/mitm/manager": "./src/mitm/manager.stub.ts",
+      //"@/mitm/manager": "./src/mitm/manager.stub.ts",
     },
   },
   output: "standalone",
