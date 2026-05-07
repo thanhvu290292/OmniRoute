@@ -1,9 +1,6 @@
 name: Deploy to VPS
 
 on:
-  workflow_run:
-    workflows: ["Publish to Docker Hub"]
-    types: [completed]
   workflow_dispatch:
 
 permissions:

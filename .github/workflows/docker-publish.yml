@@ -26,7 +26,7 @@ jobs:
     name: Build and Push Docker (multi-arch)
     runs-on: ubuntu-latest
     env:
-      IMAGE_NAME: diegosouzapw/omniroute
+      IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/omniroute
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -74,8 +74,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ${{ env.IMAGE_NAME }}:latest
-            ghcr.io/diegosouzapw/omniroute:${{ steps.version.outputs.version }}
-            ghcr.io/diegosouzapw/omniroute:latest
+            ghcr.io/${{ github.repository_owner }}/omniroute:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/omniroute:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           no-cache: false
@@ -91,6 +91,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: diegosouzapw/omniroute
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/omniroute
           short-description: "OmniRoute — Unified AI proxy. Route any LLM through one endpoint."
           readme-filepath: ./README.md
