@@ -87,6 +87,11 @@ function buildAnthropicCompatibleUrl(baseUrl) {
 export function detectFormatFromEndpoint(body, endpointPath = "") {
   const path = String(endpointPath || "");
 
+  // Antigravity format: Gemini wrapped in body.request
+  if (body.request?.contents && body.userAgent === "antigravity") {
+    return "antigravity";
+  }
+
   if (/\/responses(?=\/|$)/i.test(path) || /^responses(?=\/|$)/i.test(path)) {
     return "openai-responses";
   }
